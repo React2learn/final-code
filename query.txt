@@ -1,0 +1,2 @@
+# if need to add user using terminal 
+python -c "import sys; sys.path.append('backend'); import auth; auth.create_user('admin2', 'securepassword2', 'admin2@bank.internal', 'admin')"

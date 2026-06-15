@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+venv/
+.venv/
+env/
+banking_env/
+
+# VS Code
+.vscode/
+
+# Database / Local Storage
+*.db
+*.sqlite
+*.sqlite3
+
+# Chroma DB
+backend/chroma_db/*
+!backend/chroma_db/.gitkeep
+
+# Environment Variables
+.env
+# NOTE: .env.example is safe to commit (no real secrets)
+
+# Large data files
+backend/*.csv
+backend/complaint_history.json
+
+# AI assistant folder (if contains local/generated content)
+AI_assiant/
