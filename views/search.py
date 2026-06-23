@@ -6,9 +6,9 @@ import os
 @st.cache_data
 def load_full_dataset():
     paths = [
-        "backend/consumer_complaints_clean_5000.csv",
-        "consumer_complaints_clean_5000.csv",
-        "../backend/consumer_complaints_clean_5000.csv"
+        "backend/new_clean_dataset.csv",
+         "new_clean_dataset.csv",
+         "../backend/new_clean_dataset.csv"
     ]
     for p in paths:
         if os.path.exists(p):
@@ -20,63 +20,48 @@ def load_full_dataset():
 
 # --- Page Layout ---
 st.title("Banking Complaint Management System")
+st.subheader("Lookup Existing Complaint by ID")
 
 # --- Search Section ---
-st.subheader("Lookup Existing Complaint by ID")
-complaint_id = st.text_input("Enter Complaint ID", placeholder="e.g., 1879220")
+col1, col2 = st.columns([3, 1])
+with col1:
+    complaint_id = st.text_input("Enter Complaint ID", placeholder="e.g., 1879220", label_visibility="collapsed")
+with col2:
+    fetch = st.button("Fetch Details", use_container_width=True)
 
-if st.button("Fetch Details"):
+if fetch:
     df = load_full_dataset()
-    
+
     if df.empty:
         st.error("Dataset could not be loaded. Please check file paths.")
     elif not complaint_id:
         st.warning("Please enter a Complaint ID.")
     else:
-        # Filter by ID
         result = df[df['Complaint ID'].astype(str) == str(complaint_id)]
-        
+
         if not result.empty:
             st.success("Record Found!")
             record = result.iloc[0]
-            
-            # --- Header ---
-            st.subheader(f"Details for Complaint ID: {record['Complaint ID']}")
-            st.divider() # Added divider for clean separation
-            
-            # --- Display Fields ---
-            with st.container():
-                record_dict = record.to_dict()
-                
-                # We separate the narrative from other fields for better visual flow
-                narrative = record_dict.pop('Consumer complaint narrative', None)
-                
-                # 1. Show all other metadata first
-                cols = st.columns(2)
-                for i, (column, value) in enumerate(record_dict.items()):
-                    if pd.notna(value):
-                        with cols[i % 2]:
-                            st.write(f"**{column}:** {value}")
-                
-                # 2. Add extra spacing before the narrative
-                st.write("") 
-                st.write("") 
-                
-                # 3. Show narrative with custom styling
-                if narrative:
-                    st.write("**Consumer complaint narrative:**")
-                    st.markdown(
-                        f"""
-                        <div style="background-color: oklch(0.27 0.01 286); 
-                                    color: #cccccc; 
-                                    padding: 20px; 
-                                    border-radius: 8px; 
-                                    border-left: 6px solid #888888;
-                                    line-height: 1.6;">
-                            {narrative}
-                        </div>
-                        """, 
-                        unsafe_allow_html=True
-                    )
+            record_dict = record.to_dict()
+
+            # Separate narrative
+            narrative = record_dict.pop('Consumer complaint narrative', None)
+
+            # Build metadata table
+            table_data = [
+                {"Field": k, "Value": str(v)}
+                for k, v in record_dict.items()
+                if pd.notna(v)
+            ]
+            st.divider()
+            st.markdown(f"**Complaint ID:** {record['Complaint ID']}")
+            st.table(pd.DataFrame(table_data).set_index("Field"))
+
+            # Narrative below table
+            if narrative and pd.notna(narrative):
+                st.divider()
+                st.markdown("**Consumer Complaint Narrative**")
+                st.text_area("", value=narrative, height=200, disabled=True, label_visibility="collapsed")
         else:
             st.error("No record found with that ID.")
+ 

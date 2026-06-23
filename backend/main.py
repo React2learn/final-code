@@ -67,7 +67,7 @@ def get_all_complaints():
 
 # ChromaDB setup
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
-collection = chroma_client.get_collection(name="updated_banking_complaints")
+collection = chroma_client.get_or_create_collection(name="new_banking_complaints")
 
 app = FastAPI(title="Banking Complaint Resolver", version="1.0.0")
 
@@ -161,8 +161,19 @@ async def resolve(req: QueryRequest, current_user: dict = Depends(get_current_us
         - Short Description: {req.query}
         - Complaint ID: {case_meta.get('Complaint ID', complaint_id)}
         - Description: {case_text}
-        - Issue Source: {case_meta.get('Company', 'Unknown')} | Product: {case_meta.get('Product', 'Unknown')} | Issue: {case_meta.get('Issue', 'Unknown')}
-        - Existing Solution: Company Response: {case_meta.get('Company response to consumer', 'Unknown')} | Timely: {case_meta.get('Timely response?', 'Unknown')} | Submitted via: {case_meta.get('Submitted via', 'Unknown')} | Date received: {case_meta.get('Date received', 'Unknown')}
+        - Company: {case_meta.get('Company', 'Unknown')}
+        - Product: {case_meta.get('Product', 'Unknown')} | Sub-product: {case_meta.get('Sub-product', 'Unknown')}
+        - Issue: {case_meta.get('Issue', 'Unknown')} | Sub-issue: {case_meta.get('Sub-issue', 'Unknown')}
+        - State: {case_meta.get('State', 'Unknown')} | ZIP: {case_meta.get('ZIP code', 'Unknown')}
+        - Tags: {case_meta.get('Tags', 'Unknown')}
+        - Consumer consent: {case_meta.get('Consumer consent provided?', 'Unknown')}
+        - Submitted via: {case_meta.get('Submitted via', 'Unknown')}
+        - Date received: {case_meta.get('Date received', 'Unknown')}
+        - Date sent to company: {case_meta.get('Date sent to company', 'Unknown')}
+        - Company response: {case_meta.get('Company response to consumer', 'Unknown')}
+        - Company public response: {case_meta.get('Company public response', 'Unknown')}
+        - Timely response: {case_meta.get('Timely response?', 'Unknown')}
+        - Consumer disputed: {case_meta.get('Consumer disputed?', 'Unknown')}
 
         Provide a well-structured incident resolution with the following sections:
         **Incident Summary**, **Root Cause Analysis**, **Detailed Resolution Steps**, **Verification Process**, **Preventive Measures**.
@@ -181,8 +192,16 @@ async def resolve(req: QueryRequest, current_user: dict = Depends(get_current_us
             "query": req.query,
             "matched_company": case_meta.get('Company', 'Unknown'),
             "matched_product": case_meta.get('Product', 'Unknown'),
+            "matched_sub_product": case_meta.get('Sub-product', 'Unknown'),
             "matched_issue": case_meta.get('Issue', 'Unknown'),
+            "matched_sub_issue": case_meta.get('Sub-issue', 'Unknown'),
+            "state": case_meta.get('State', 'Unknown'),
+            "zip_code": case_meta.get('ZIP code', 'Unknown'),
+            "tags": case_meta.get('Tags', 'Unknown'),
+            "consumer_consent": case_meta.get('Consumer consent provided?', 'Unknown'),
+            "consumer_disputed": case_meta.get('Consumer disputed?', 'Unknown'),
             "company_response": case_meta.get('Company response to consumer', 'Unknown'),
+            "company_public_response": case_meta.get('Company public response', 'Unknown'),
             "timely_response": case_meta.get('Timely response?', 'Unknown'),
             "resolution_markdown": response['response'],
             "created_date": case_meta.get('Date received', None),
@@ -250,8 +269,19 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
         - Short Description: {req.query}
         - Complaint ID: {case_meta.get('Complaint ID', cid)}
         - Description: {case_text}
-        - Issue Source: {case_meta.get('Company', 'Unknown')} | Product: {case_meta.get('Product', 'Unknown')} | Issue: {case_meta.get('Issue', 'Unknown')}
-        - Existing Solution: Company Response: {case_meta.get('Company response to consumer', 'Unknown')} | Timely: {case_meta.get('Timely response?', 'Unknown')} | Submitted via: {case_meta.get('Submitted via', 'Unknown')} | Date received: {case_meta.get('Date received', 'Unknown')}
+        - Company: {case_meta.get('Company', 'Unknown')}
+        - Product: {case_meta.get('Product', 'Unknown')} | Sub-product: {case_meta.get('Sub-product', 'Unknown')}
+        - Issue: {case_meta.get('Issue', 'Unknown')} | Sub-issue: {case_meta.get('Sub-issue', 'Unknown')}
+        - State: {case_meta.get('State', 'Unknown')} | ZIP: {case_meta.get('ZIP code', 'Unknown')}
+        - Tags: {case_meta.get('Tags', 'Unknown')}
+        - Consumer consent: {case_meta.get('Consumer consent provided?', 'Unknown')}
+        - Submitted via: {case_meta.get('Submitted via', 'Unknown')}
+        - Date received: {case_meta.get('Date received', 'Unknown')}
+        - Date sent to company: {case_meta.get('Date sent to company', 'Unknown')}
+        - Company response: {case_meta.get('Company response to consumer', 'Unknown')}
+        - Company public response: {case_meta.get('Company public response', 'Unknown')}
+        - Timely response: {case_meta.get('Timely response?', 'Unknown')}
+        - Consumer disputed: {case_meta.get('Consumer disputed?', 'Unknown')}
 
         Provide a well-structured incident resolution with the following sections:
         **Incident Summary**, **Root Cause Analysis**, **Detailed Resolution Steps**, **Verification Process**, **Preventive Measures**.
@@ -270,8 +300,16 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
             "query": req.query,
             "matched_company": case_meta.get('Company', 'Unknown'),
             "matched_product": case_meta.get('Product', 'Unknown'),
+            "matched_sub_product": case_meta.get('Sub-product', 'Unknown'),
             "matched_issue": case_meta.get('Issue', 'Unknown'),
+            "matched_sub_issue": case_meta.get('Sub-issue', 'Unknown'),
+            "state": case_meta.get('State', 'Unknown'),
+            "zip_code": case_meta.get('ZIP code', 'Unknown'),
+            "tags": case_meta.get('Tags', 'Unknown'),
+            "consumer_consent": case_meta.get('Consumer consent provided?', 'Unknown'),
+            "consumer_disputed": case_meta.get('Consumer disputed?', 'Unknown'),
             "company_response": case_meta.get('Company response to consumer', 'Unknown'),
+            "company_public_response": case_meta.get('Company public response', 'Unknown'),
             "timely_response": case_meta.get('Timely response?', 'Unknown'),
             "resolution_markdown": response['response'],
             "created_date": case_meta.get('Date received', None),
@@ -320,3 +358,5 @@ if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
 
 # uvicorn main:app --reload
+# admin
+# admin123
