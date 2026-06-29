@@ -371,16 +371,16 @@ with c6:
         x="Count",
         y="Response",
         orientation="h",
-        text="Count",  # Add this
+        text="Count",  
         color_discrete_sequence=["#a78bfa"],
     )
-    fig6.update_traces(marker_line_width=0, textfont=dict(color="white"))  # Add this
+    fig6.update_traces(marker_line_width=0, textfont=dict(color="white"))  
     S(fig6, "Company response types")
     fig6.update_layout(yaxis_title=None, xaxis_title=None)
     st.plotly_chart(fig6, use_container_width=True)
 
 
-# ── SECTION 4 · Geographic (State) ────────────────────────────────────────────
+# SECTION 4 · Geographic (State) 
 st.markdown(
     '<div class="sec">Geographic distribution by state</div>', unsafe_allow_html=True
 )

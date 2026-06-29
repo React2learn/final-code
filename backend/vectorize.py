@@ -2,11 +2,12 @@
 vectorize.py  –  Load new_clean_dataset.csv (18 cols) into ChromaDB
 Run once:  python vectorize.py
 """
+
 import os, pandas as pd, chromadb
 from tqdm import tqdm
 
-BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH   = os.path.join(BASE_DIR, "new_clean_dataset.csv")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, "new_clean_dataset.csv")
 CHROMA_DIR = os.path.join(BASE_DIR, "chroma_db")
 COLLECTION = "new_banking_complaints"
 BATCH_SIZE = 500
@@ -14,6 +15,7 @@ BATCH_SIZE = 500
 print(f"Loading dataset from: {CSV_PATH}")
 df = pd.read_csv(CSV_PATH, dtype=str).fillna("")
 print(f"Loaded {len(df):,} rows with columns: {list(df.columns)}")
+
 
 # Use Consumer complaint narrative as the document text
 # Fall back to concatenated key fields if narrative is empty
@@ -29,16 +31,25 @@ def build_document(row):
         f"Company: {row.get('Company','')}."
     )
 
+
 # Build metadata dict – all 17 non-document columns
 META_COLS = [
-    "Date received", "Product", "Sub-product",
-    "Issue", "Sub-issue",
-    "Company public response", "Company",
-    "State", "ZIP code", "Tags",
+    "Date received",
+    "Product",
+    "Sub-product",
+    "Issue",
+    "Sub-issue",
+    "Company public response",
+    "Company",
+    "State",
+    "ZIP code",
+    "Tags",
     "Consumer consent provided?",
-    "Submitted via", "Date sent to company",
+    "Submitted via",
+    "Date sent to company",
     "Company response to consumer",
-    "Timely response?", "Consumer disputed?",
+    "Timely response?",
+    "Consumer disputed?",
     "Complaint ID",
 ]
 
@@ -60,11 +71,10 @@ print(f"Upserting {len(df):,} records in batches of {BATCH_SIZE} …")
 for start in tqdm(range(0, len(df), BATCH_SIZE)):
     batch = df.iloc[start : start + BATCH_SIZE]
 
-    ids       = batch["Complaint ID"].tolist()
+    ids = batch["Complaint ID"].tolist()
     documents = [build_document(r) for _, r in batch.iterrows()]
     metadatas = [
-        {col: str(r.get(col, "")) for col in META_COLS}
-        for _, r in batch.iterrows()
+        {col: str(r.get(col, "")) for col in META_COLS} for _, r in batch.iterrows()
     ]
 
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas)

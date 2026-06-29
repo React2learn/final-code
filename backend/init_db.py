@@ -5,17 +5,15 @@ import pandas as pd
 df = pd.read_csv("consumer_complaints_clean_5000.csv")
 
 # Safety check
-df["Consumer complaint narrative"] = df[
-    "Consumer complaint narrative"
-].fillna("No complaint narrative provided.")
+df["Consumer complaint narrative"] = df["Consumer complaint narrative"].fillna(
+    "No complaint narrative provided."
+)
 
 
 # Create ChromaDB client
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 
-collection = chroma_client.get_or_create_collection(
-    name="updated_banking_complaints"
-)
+collection = chroma_client.get_or_create_collection(name="updated_banking_complaints")
 
 documents = []
 metadatas = []
@@ -29,19 +27,20 @@ for _, row in df.iterrows():
     documents.append(str(row["Consumer complaint narrative"]))
 
     # Metadata
-    metadatas.append({
-        "Complaint ID": str(row["Complaint ID"]),
-        "Product": str(row["Product"]),
-        "Issue": str(row["Issue"]),
-        "Company": str(row["Company"]),
-        "Submitted via": str(row["Submitted via"]),
-        "Date received": str(row["Date received"]),
-        "Date sent to company": str(row["Date sent to company"]),
-        "Company response to consumer": str(row["Company response to consumer"]),
-        "Timely response?": str(row["Timely response?"])
-    })
+    metadatas.append(
+        {
+            "Complaint ID": str(row["Complaint ID"]),
+            "Product": str(row["Product"]),
+            "Issue": str(row["Issue"]),
+            "Company": str(row["Company"]),
+            "Submitted via": str(row["Submitted via"]),
+            "Date received": str(row["Date received"]),
+            "Date sent to company": str(row["Date sent to company"]),
+            "Company response to consumer": str(row["Company response to consumer"]),
+            "Timely response?": str(row["Timely response?"]),
+        }
+    )
 
-    
     ids.append(str(row["Complaint ID"]))
 
 # Insert in batches
@@ -56,7 +55,7 @@ for i in range(0, len(documents), batch_size):
     collection.add(
         documents=documents[i:end_idx],
         metadatas=metadatas[i:end_idx],
-        ids=ids[i:end_idx]
+        ids=ids[i:end_idx],
     )
 
 print("\nSUCCESS!")

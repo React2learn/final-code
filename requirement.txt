@@ -2,3 +2,4 @@ streamlit
 requests
 streamlit-option-menu
 python-dotenv
+streamlit-cookies-manager

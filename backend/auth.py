@@ -19,6 +19,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "change-this-in-production")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
+
 def init_auth_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -31,7 +32,7 @@ def init_auth_db():
         )
     """)
     conn.commit()
-    
+
     # Seed default admin if no users exist
     cursor.execute("SELECT COUNT(*) FROM users")
     count = cursor.fetchone()[0]
@@ -39,24 +40,31 @@ def init_auth_db():
         hashed = pwd_context.hash("admin123")
         cursor.execute(
             "INSERT INTO users (username, hashed_password, email, role) VALUES (?, ?, ?, ?)",
-            ("admin", hashed, "admin@bank.internal", "admin")
+            ("admin", hashed, "admin@bank.internal", "admin"),
         )
         conn.commit()
     conn.close()
 
+
 # Always initialize on import
 init_auth_db()
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
 
 def get_user_by_username(username: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT username, hashed_password, email, role FROM users WHERE username = ?", (username,))
+    cursor.execute(
+        "SELECT username, hashed_password, email, role FROM users WHERE username = ?",
+        (username,),
+    )
     row = cursor.fetchone()
     conn.close()
     if row:
@@ -64,9 +72,10 @@ def get_user_by_username(username: str):
             "username": row[0],
             "hashed_password": row[1],
             "email": row[2],
-            "role": row[3]
+            "role": row[3],
         }
     return None
+
 
 def create_user(username: str, password_raw: str, email: str = "", role: str = "user"):
     hashed_password = get_password_hash(password_raw)
@@ -75,7 +84,7 @@ def create_user(username: str, password_raw: str, email: str = "", role: str = "
     try:
         cursor.execute(
             "INSERT INTO users (username, hashed_password, email, role) VALUES (?, ?, ?, ?)",
-            (username, hashed_password, email, role)
+            (username, hashed_password, email, role),
         )
         conn.commit()
         success = True
@@ -83,6 +92,7 @@ def create_user(username: str, password_raw: str, email: str = "", role: str = "
         success = False
     conn.close()
     return success
+
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
@@ -94,12 +104,14 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
 def decode_access_token(token: str) -> Optional[dict]:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None
+
 
 def get_all_users():
     conn = sqlite3.connect(DB_PATH)
@@ -108,6 +120,7 @@ def get_all_users():
     rows = cursor.fetchall()
     conn.close()
     return [{"username": row[0], "email": row[1], "role": row[2]} for row in rows]
+
 
 def delete_user_by_username(username: str) -> bool:
     conn = sqlite3.connect(DB_PATH)
@@ -120,3 +133,5 @@ def delete_user_by_username(username: str) -> bool:
         success = False
     conn.close()
     return success
+
+# python -c "import auth; print(auth.create_user('john', 'password123', 'john@bank.com', 'admin'))"

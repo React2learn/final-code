@@ -1,0 +1,69 @@
+Project Report: Customer Intelligence Platform (Banking Complaint Resolver)
+
+1. Executive Summary
+The Customer Intelligence Platform (also referred to as the Banking Complaint Resolver) is a full-stack, AI-powered web application designed to analyze, manage, and resolve consumer banking complaints. It provides a secure, premium-looking portal for users and administrators to query historical complaint data and utilize generative AI to synthesize structured resolution reports.
+
+2. Technology Stack & Tools Used
+
+Frontend (User Interface)
+- Streamlit: Used as the primary framework for building the interactive web application (app.py). It handles the user interface, state management (session state for auth), and multi-page routing.
+- Custom CSS / HTML: Injected via Streamlit for a premium banking aesthetic, featuring modern fonts (Google Inter) and responsive layouts.
+- streamlit-option-menu: For customized navigation menus across different views.
+
+Backend (API & Business Logic)
+- FastAPI: A modern, high-performance web framework used for building the backend RESTful API (backend/main.py). It serves endpoints for authentication, user management, and AI resolution.
+- Uvicorn (implied): ASGI server to run the FastAPI application.
+- Python-dotenv: Used for managing environment variables (like SECRET_KEY and JWT settings) securely.
+
+Authentication & Security
+- SQLite3: A lightweight, serverless database (backend/users.db) used to store user credentials, roles (admin/user), and emails.
+- OAuth2 with JWT (JSON Web Tokens): Used for stateless authentication. Handled via python-jose.
+- Passlib (Bcrypt): Used for secure password hashing and verification (backend/auth.py).
+
+Data Processing & AI / Machine Learning (RAG Pipeline)
+- ChromaDB: An open-source vector database used to store and retrieve high-dimensional embeddings of banking complaints (backend/chroma_db). It allows for fast similarity searches over the dataset.
+- Ollama: An open-source framework used to run LLMs locally. It powers the generative AI assistant by taking retrieved complaint contexts (from ChromaDB) and generating incident resolution reports.
+- Pandas: Used in data ingestion (backend/vectorize.py) to process and clean the new_clean_dataset.csv before upserting the data into ChromaDB.
+
+3. Project Architecture & Structure
+
+The project follows a decoupled client-server architecture:
+
+CIP-main - demo - final/
+│
+├── app.py                     # Streamlit frontend entry point & login routing
+├── requirement.txt            # Python dependencies
+│
+├── backend/                   # FastAPI Backend Services
+│   ├── main.py                # Core API endpoints (Auth, AI Resolve, User Mgmt)
+│   ├── auth.py                # JWT handling, password hashing, SQLite integration
+│   ├── vectorize.py           # Script to load CSV data into ChromaDB
+│   ├── init_db.py             # Database initialization script
+│   ├── users.db               # SQLite database for authentication
+│   ├── chroma_db/             # Vector database storage folder
+│   ├── complaint_history.json # Local storage for saved complaints/resolutions
+│   └── new_clean_dataset.csv  # Raw dataset of banking complaints
+│
+└── views/                     # Streamlit Frontend Pages
+    ├── dashboard.py           # Analytics and overview dashboard
+    ├── search.py              # Semantic search interface for complaints
+    ├── assistant.py           # GenAI chat interface for resolution generation
+    └── admin.py               # Admin panel for user management
+
+4. Key Features Implemented
+
+- Secure Role-Based Authentication:
+  JWT-based login system with encrypted passwords. Separation of roles (user vs admin), restricting certain pages (like the Admin Panel) and API endpoints to administrators.
+
+- Retrieval-Augmented Generation (RAG):
+  Data Ingestion: vectorize.py converts a large CSV of consumer complaints into vectorized documents with extensive metadata (Product, Issue, Company, State, ZIP).
+  Contextual Generation: When a user inputs a Complaint ID, the backend fetches the exact textual narrative and metadata from ChromaDB, injecting it into a strict system prompt for Ollama. Ollama then generates an IT/Banking expert-level incident resolution report.
+
+- Complaint History Tracking:
+  The system allows for saving and retrieving generated complaint resolutions to a local complaint_history.json file for auditing and future reference.
+
+- Multi-Page Dashboard:
+  A modern, multi-page Streamlit app with customized navigation separating concerns: searching raw data, interacting with the AI assistant, viewing metrics, and administrating users.
+
+5. Summary
+The project effectively combines a fast Python backend (FastAPI) with a rapid-prototyping frontend (Streamlit) to deliver a robust internal tool. By utilizing ChromaDB for vector storage and Ollama for local AI generation, the platform ensures data privacy while providing state-of-the-art AI capabilities for banking complaint resolution.

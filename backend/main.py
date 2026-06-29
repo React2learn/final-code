@@ -11,6 +11,7 @@ except ImportError:
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login", auto_error=False)
 
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -30,40 +31,91 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         raise credentials_exception
     return user
 
+
 class UserRegister(BaseModel):
     username: str
     password: str
     email: Optional[str] = ""
 
+
 class UserLogin(BaseModel):
     username: str
     password: str
+
+
 import ollama
 import chromadb
 import re
 import json
 import os
 
+import sqlite3
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STORAGE_FILE = os.path.join(BASE_DIR, "complaint_history.json")
+DB_FILE = os.path.join(BASE_DIR, "complaints.db")
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS complaints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            payload TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+# Initialize DB on load
+init_db()
 
 def save_complaint(data):
-    
-    history = get_all_complaints()
-    history.append(data)
-    with open(STORAGE_FILE, "w") as f:
-        json.dump(history, f, indent=4)
+    complaint_id = str(data.get("complaint_id", ""))
+    # Prevent duplicates: skip if this complaint_id is already saved
+    if complaint_id and get_complaint_from_db(complaint_id):
+        print(f"[CACHE] Skipping save — complaint {complaint_id} already in DB.")
+        return
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO complaints (payload) VALUES (?)", (json.dumps(data),))
+    conn.commit()
+    conn.close()
+    print(f"[CACHE] Saved new complaint {complaint_id} to DB.")
+
+
 
 def get_all_complaints():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT payload FROM complaints ORDER BY id ASC")
+    rows = cursor.fetchall()
+    conn.close()
     
-    if not os.path.exists(STORAGE_FILE):
-        return []
-    with open(STORAGE_FILE, "r") as f:
+    history = []
+    for row in rows:
         try:
-            return json.load(f)
+            history.append(json.loads(row[0]))
         except json.JSONDecodeError:
-            return []
+            continue
+    return history
+
+
+def get_complaint_from_db(complaint_id):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    search_pattern = f'%"{complaint_id}"%'
+    cursor.execute("SELECT payload FROM complaints WHERE payload LIKE ?", (search_pattern,))
+    rows = cursor.fetchall()
+    conn.close()
+    for row in rows:
+        try:
+            data = json.loads(row[0])
+            if data.get("complaint_id") == str(complaint_id):
+                return data
+        except json.JSONDecodeError:
+            continue
+    return None
+
 
 # ChromaDB setup
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
@@ -78,19 +130,27 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.post("/api/register", tags=["Auth"])
 async def register(req: UserRegister, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only administrators can register new users.")
+        raise HTTPException(
+            status_code=403, detail="Only administrators can register new users."
+        )
     if not req.username or not req.password:
-        raise HTTPException(status_code=400, detail="Username and password are required")
+        raise HTTPException(
+            status_code=400, detail="Username and password are required"
+        )
     existing = auth.get_user_by_username(req.username)
     if existing:
         raise HTTPException(status_code=400, detail="Username already registered")
-    success = auth.create_user(username=req.username, password_raw=req.password, email=req.email, role="admin")
+    success = auth.create_user(
+        username=req.username, password_raw=req.password, email=req.email, role="admin"
+    )
     if not success:
         raise HTTPException(status_code=500, detail="Failed to create user")
     return {"status": "success", "message": "Admin user registered successfully"}
+
 
 @app.post("/api/login", tags=["Auth"])
 async def login(req: UserLogin):
@@ -104,51 +164,75 @@ async def login(req: UserLogin):
         "access_token": access_token,
         "token_type": "bearer",
         "username": user["username"],
-        "role": user.get("role", "user")
+        "role": user.get("role", "user"),
     }
+
 
 @app.get("/api/users", tags=["Auth"])
 async def list_users(current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only administrators can view users.")
+        raise HTTPException(
+            status_code=403, detail="Only administrators can view users."
+        )
     return auth.get_all_users()
+
 
 @app.delete("/api/users/{username}", tags=["Auth"])
 async def delete_user(username: str, current_user: dict = Depends(get_current_user)):
     if current_user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Only administrators can delete users.")
+        raise HTTPException(
+            status_code=403, detail="Only administrators can delete users."
+        )
     if current_user.get("username") == username:
-        raise HTTPException(status_code=400, detail="You cannot delete your own administrator account.")
+        raise HTTPException(
+            status_code=400, detail="You cannot delete your own administrator account."
+        )
     success = auth.delete_user_by_username(username)
     if not success:
-        raise HTTPException(status_code=404, detail="User not found or deletion failed.")
+        raise HTTPException(
+            status_code=404, detail="User not found or deletion failed."
+        )
     return {"status": "success", "message": f"User {username} deleted successfully"}
+
 
 class QueryRequest(BaseModel):
     query: str
+
 
 # Updated model to allow specifying a complaint_id for chat
 class ChatRequest(BaseModel):
     query: str
     complaint_id: Optional[str] = None
 
+
 SYSTEM_INSTRUCTIONS = """
 Act as an IT expert and provide a well-structured incident resolution. 
 You are strictly bound to the technical data provided. Do not invent commands, errors, or logs that are not present or logically tied to the incident description.
 """
+
 
 @app.post("/api/resolve", tags=["Complaints"])
 async def resolve(req: QueryRequest, current_user: dict = Depends(get_current_user)):
     try:
         complaint_match = re.search(r"\b\d+\b", req.query)
         if not complaint_match:
-            raise HTTPException(status_code=400, detail="Please provide a Complaint ID.")
+            raise HTTPException(
+                status_code=400, detail="Please provide a Complaint ID."
+            )
 
         complaint_id = complaint_match.group()
-        results = collection.get(ids=[complaint_id])
         
+        # Check cache in database first
+        existing = get_complaint_from_db(complaint_id)
+        if existing:
+            return existing
+            
+        results = collection.get(ids=[complaint_id])
+
         if not results["ids"]:
-            raise HTTPException(status_code=404, detail=f"Complaint ID {complaint_id} not found.")
+            raise HTTPException(
+                status_code=404, detail=f"Complaint ID {complaint_id} not found."
+            )
 
         case_text = results["documents"][0]
         case_meta = results["metadatas"][0]
@@ -180,32 +264,36 @@ async def resolve(req: QueryRequest, current_user: dict = Depends(get_current_us
         """
 
         response = ollama.generate(
-            model='qwen2.5:3b',
+            model="qwen2.5:3b",
             prompt=rag_prompt,
             system=SYSTEM_INSTRUCTIONS,
-            options={'temperature': 0.1, 'top_p': 0.9}
+            options={"temperature": 0.1, "top_p": 0.9},
         )
 
         new_entry = {
             "status": "success",
             "complaint_id": case_meta.get("Complaint ID", complaint_id),
             "query": req.query,
-            "matched_company": case_meta.get('Company', 'Unknown'),
-            "matched_product": case_meta.get('Product', 'Unknown'),
-            "matched_sub_product": case_meta.get('Sub-product', 'Unknown'),
-            "matched_issue": case_meta.get('Issue', 'Unknown'),
-            "matched_sub_issue": case_meta.get('Sub-issue', 'Unknown'),
-            "state": case_meta.get('State', 'Unknown'),
-            "zip_code": case_meta.get('ZIP code', 'Unknown'),
-            "tags": case_meta.get('Tags', 'Unknown'),
-            "consumer_consent": case_meta.get('Consumer consent provided?', 'Unknown'),
-            "consumer_disputed": case_meta.get('Consumer disputed?', 'Unknown'),
-            "company_response": case_meta.get('Company response to consumer', 'Unknown'),
-            "company_public_response": case_meta.get('Company public response', 'Unknown'),
-            "timely_response": case_meta.get('Timely response?', 'Unknown'),
-            "resolution_markdown": response['response'],
-            "created_date": case_meta.get('Date received', None),
-            "sent_to_company_date": case_meta.get('Date sent to company', None)
+            "matched_company": case_meta.get("Company", "Unknown"),
+            "matched_product": case_meta.get("Product", "Unknown"),
+            "matched_sub_product": case_meta.get("Sub-product", "Unknown"),
+            "matched_issue": case_meta.get("Issue", "Unknown"),
+            "matched_sub_issue": case_meta.get("Sub-issue", "Unknown"),
+            "state": case_meta.get("State", "Unknown"),
+            "zip_code": case_meta.get("ZIP code", "Unknown"),
+            "tags": case_meta.get("Tags", "Unknown"),
+            "consumer_consent": case_meta.get("Consumer consent provided?", "Unknown"),
+            "consumer_disputed": case_meta.get("Consumer disputed?", "Unknown"),
+            "company_response": case_meta.get(
+                "Company response to consumer", "Unknown"
+            ),
+            "company_public_response": case_meta.get(
+                "Company public response", "Unknown"
+            ),
+            "timely_response": case_meta.get("Timely response?", "Unknown"),
+            "resolution_markdown": response["response"],
+            "created_date": case_meta.get("Date received", None),
+            "sent_to_company_date": case_meta.get("Date sent to company", None),
         }
 
         save_complaint(new_entry)
@@ -214,6 +302,7 @@ async def resolve(req: QueryRequest, current_user: dict = Depends(get_current_us
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/last-resolution", tags=["Complaints"])
 async def get_last_resolution(current_user: dict = Depends(get_current_user)):
     history = get_all_complaints()
@@ -221,26 +310,41 @@ async def get_last_resolution(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="No resolution yet.")
     return history[-1]
 
+
 @app.get("/api/all-complaints", tags=["Dashboard"])
 async def get_all_data(current_user: dict = Depends(get_current_user)):
     return get_all_complaints()
 
+
+@app.delete("/api/complaints/clear", tags=["Complaints"])
+async def clear_complaints(current_user: dict = Depends(get_current_user)):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM complaints")
+    conn.commit()
+    conn.close()
+    return {"status": "success", "message": "All complaints cleared from the database."}
+
+
+
 @app.post("/api/chat", tags=["Complaints"])
-async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_current_user)):
+async def chat_with_data(
+    req: ChatRequest, current_user: dict = Depends(get_current_user)
+):
     # Determine if this is a request to resolve a new complaint (by ID or description)
     complaint_match = re.search(r"\b\d{5,}\b", req.query)
     is_new_complaint = False
-    
+
     if complaint_match:
         is_new_complaint = True
     else:
-        # Ask LLM to classify if it's a new complaint description or a question
+        
         classification = ollama.generate(
-            model='qwen2.5:3b',
+            model="qwen2.5:3b",
             prompt=f"Is the following text a description of a banking complaint (e.g. detailing an issue with a bank, credit card, or account), or is it a question asking about an already resolved complaint (e.g. 'What was the date?', 'Did they refund it?')? \n\nText: '{req.query}'\n\nAnswer ONLY with 'COMPLAINT' or 'QUESTION'.",
-            options={'temperature': 0.1, 'max_tokens': 10}
+            options={"temperature": 0.1, "max_tokens": 10},
         )
-        if 'COMPLAINT' in classification['response'].upper():
+        if "COMPLAINT" in classification["response"].upper():
             is_new_complaint = True
 
     if is_new_complaint:
@@ -248,7 +352,9 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
             complaint_id = complaint_match.group()
             results = collection.get(ids=[complaint_id])
             if not results or not results.get("ids"):
-                return {"resolution_markdown": f"Complaint ID {complaint_id} not found."}
+                return {
+                    "resolution_markdown": f"Complaint ID {complaint_id} not found."
+                }
             case_text = results["documents"][0]
             case_meta = results["metadatas"][0]
             cid = complaint_id
@@ -256,11 +362,24 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
             # Semantic search to find the closest complaint
             results = collection.query(query_texts=[req.query], n_results=1)
             if not results or not results.get("ids") or not results["ids"][0]:
-                return {"resolution_markdown": "Could not find a matching complaint in the database."}
+                return {
+                    "resolution_markdown": "Could not find a matching complaint in the database."
+                }
             case_text = results["documents"][0][0]
             case_meta = results["metadatas"][0][0]
             cid = results["ids"][0][0]
-            
+            print(f"[DEBUG] Semantic search matched complaint cid: {cid}")
+
+        # Smart Caching: check DB for the resolved 'cid' before generating
+        print(f"[DEBUG] Checking DB cache for cid: {cid}")
+        existing = get_complaint_from_db(cid)
+        print(f"[DEBUG] Cache result: {'HIT' if existing else 'MISS'}")
+        if existing:
+            return {
+                "complaint_id": existing.get("complaint_id"),
+                "resolution_markdown": existing.get("resolution_markdown")
+            }
+
         rag_prompt = f"""
         You are an AI assistant specializing in banking complaint analysis and resolution.
         Analyze the provided banking complaint details and generate a clear, comprehensive, and detailed resolution report.
@@ -288,49 +407,68 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
         """
 
         response = ollama.generate(
-            model='qwen2.5:3b',
+            model="qwen2.5:3b",
             prompt=rag_prompt,
             system=SYSTEM_INSTRUCTIONS,
-            options={'temperature': 0.1, 'top_p': 0.9}
+            options={"temperature": 0.1, "top_p": 0.9},
         )
 
         new_entry = {
             "status": "success",
             "complaint_id": case_meta.get("Complaint ID", cid),
             "query": req.query,
-            "matched_company": case_meta.get('Company', 'Unknown'),
-            "matched_product": case_meta.get('Product', 'Unknown'),
-            "matched_sub_product": case_meta.get('Sub-product', 'Unknown'),
-            "matched_issue": case_meta.get('Issue', 'Unknown'),
-            "matched_sub_issue": case_meta.get('Sub-issue', 'Unknown'),
-            "state": case_meta.get('State', 'Unknown'),
-            "zip_code": case_meta.get('ZIP code', 'Unknown'),
-            "tags": case_meta.get('Tags', 'Unknown'),
-            "consumer_consent": case_meta.get('Consumer consent provided?', 'Unknown'),
-            "consumer_disputed": case_meta.get('Consumer disputed?', 'Unknown'),
-            "company_response": case_meta.get('Company response to consumer', 'Unknown'),
-            "company_public_response": case_meta.get('Company public response', 'Unknown'),
-            "timely_response": case_meta.get('Timely response?', 'Unknown'),
-            "resolution_markdown": response['response'],
-            "created_date": case_meta.get('Date received', None),
-            "sent_to_company_date": case_meta.get('Date sent to company', None)
+            "matched_company": case_meta.get("Company", "Unknown"),
+            "matched_product": case_meta.get("Product", "Unknown"),
+            "matched_sub_product": case_meta.get("Sub-product", "Unknown"),
+            "matched_issue": case_meta.get("Issue", "Unknown"),
+            "matched_sub_issue": case_meta.get("Sub-issue", "Unknown"),
+            "state": case_meta.get("State", "Unknown"),
+            "zip_code": case_meta.get("ZIP code", "Unknown"),
+            "tags": case_meta.get("Tags", "Unknown"),
+            "consumer_consent": case_meta.get("Consumer consent provided?", "Unknown"),
+            "consumer_disputed": case_meta.get("Consumer disputed?", "Unknown"),
+            "company_response": case_meta.get(
+                "Company response to consumer", "Unknown"
+            ),
+            "company_public_response": case_meta.get(
+                "Company public response", "Unknown"
+            ),
+            "timely_response": case_meta.get("Timely response?", "Unknown"),
+            "resolution_markdown": response["response"],
+            "created_date": case_meta.get("Date received", None),
+            "sent_to_company_date": case_meta.get("Date sent to company", None),
         }
 
         save_complaint(new_entry)
-        return {"complaint_id": case_meta.get("Complaint ID", cid), "resolution_markdown": response['response']}
+        return {
+            "complaint_id": case_meta.get("Complaint ID", cid),
+            "resolution_markdown": response["response"],
+        }
 
     # If not a new complaint, handle as a chat question about existing data
     history = get_all_complaints()
     if not history:
-        raise HTTPException(status_code=400, detail="No data available to chat about. Please provide a complaint ID or description first.")
-    
+        raise HTTPException(
+            status_code=400,
+            detail="No data available to chat about. Please provide a complaint ID or description first.",
+        )
+
     if req.complaint_id:
-        target_report = next((item for item in history if str(item.get("complaint_id")) == str(req.complaint_id)), None)
+        target_report = next(
+            (
+                item
+                for item in history
+                if str(item.get("complaint_id")) == str(req.complaint_id)
+            ),
+            None,
+        )
         if not target_report:
-            raise HTTPException(status_code=404, detail=f"Complaint ID {req.complaint_id} not found.")
+            raise HTTPException(
+                status_code=404, detail=f"Complaint ID {req.complaint_id} not found."
+            )
     else:
         target_report = history[-1]
-    
+
     report_text = target_report.get("resolution_markdown", "No data.")
     created_date = target_report.get("created_date", "Unknown")
     sent_date = target_report.get("sent_to_company_date", "Unknown")
@@ -343,18 +481,23 @@ async def chat_with_data(req: ChatRequest, current_user: dict = Depends(get_curr
     Resolution Report:
     {report_text}
     """
-    
+
     response = ollama.generate(
-        model='qwen2.5:3b',
+        model="qwen2.5:3b",
         prompt=f"Context:\n{full_context}\n\nQuestion: {req.query}",
         system="You are a helpful assistant. Use the provided dates and resolution report to answer the user's question accurately.",
-        options={'temperature': 0.2}
+        options={"temperature": 0.2},
     )
-    
-    return {"complaint_id": target_report.get("complaint_id"), "resolution_markdown": response['response']}
+
+    return {
+        "complaint_id": target_report.get("complaint_id"),
+        "resolution_markdown": response["response"],
+    }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
 
 # uvicorn main:app --reload
